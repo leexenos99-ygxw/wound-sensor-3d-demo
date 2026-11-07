@@ -4,8 +4,7 @@
 
 ## 在线演示
 
-> 部署后填入 GitHub Pages 地址，例如：
-> `https://<你的用户名>.github.io/wound-sensor-3d-demo/`
+**https://leexenos99-ygxw.github.io/wound-sensor-3d-demo/**
 
 ## 这是什么
 
