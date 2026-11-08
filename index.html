@@ -298,6 +298,7 @@
         <button class="btn" id="btnBond">成键</button>
         <button class="btn" id="btnDeleteAtom">删除选中</button>
         <button class="btn" id="btnClearAssembly">清空</button>
+      <button class="btn" id="btnDemoArrange">演示整形</button>
         <span class="divider"></span>
         <span class="group-label">提示</span>
         <span id="assemblyStatus" style="font-size:12px;color:var(--ink-2)">组装模式：点击原子托盘按钮放置原子</span>
@@ -2763,6 +2764,7 @@ function addBond(a, b){
   asmBonds.push(bond);
   updateBondMesh(bond);
   refreshMolecules();
+  arrangeMolecule(a);
   return true;
 }
 function removeBond(bond){
@@ -2786,6 +2788,91 @@ function flashAtom(atom){
   const orig = atom.mesh.material.color.getHex();
   atom.mesh.material.color.set('#DC2626');
   setTimeout(()=>atom.mesh.material.color.set(orig), 280);
+}
+
+// ===== 分子几何整形 =====
+const BOND_LENGTHS = {
+  'H-H':0.74,'H-C':1.09,'H-N':1.01,'H-O':0.96,'H-Cl':1.27,'H-Na':1.89,
+  'C-C':1.54,'C-N':1.47,'C-O':1.43,'C-Cl':1.77,
+  'N-N':1.45,'N-O':1.36,'N-Cl':1.70,
+  'O-O':1.48,'O-Cl':1.70,'O-Na':2.36,'O-Mg':1.90,
+  'Cl-Cl':1.99,'Na-Cl':2.36,
+};
+function bondLen(el1,el2){
+  return BOND_LENGTHS[el1+'-'+el2] || BOND_LENGTHS[el2+'-'+el1] || 1.5;
+}
+
+const MOL_TEMPLATES = {
+  'H2':   {els:['H','H'], coords:[[-0.37,0,0],[0.37,0,0]]},
+  'O2':   {els:['O','O'], coords:[[-0.6,0,0],[0.6,0,0]]},
+  'N2':   {els:['N','N'], coords:[[-0.55,0,0],[0.55,0,0]]},
+  'Cl2':  {els:['Cl','Cl'], coords:[[-0.99,0,0],[0.99,0,0]]},
+  'H2O':  {els:['O','H','H'], coords:[[0,0,0],[0.76,0.59,0],[-0.76,0.59,0]]},
+  'CO2':  {els:['C','O','O'], coords:[[0,0,0],[1.16,0,0],[-1.16,0,0]]},
+  'CH4':  {els:['C','H','H','H','H'], coords:[[0,0,0],[0.63,0.63,0.63],[0.63,-0.63,-0.63],[-0.63,0.63,-0.60],[-0.63,-0.63,0.63]]},
+  'NH3':  {els:['N','H','H','H'], coords:[[0,0,0],[0.81,0,-0.60],[-0.40,0.70,-0.60],[-0.40,-0.70,-0.60]]},
+};
+function findTemplate(mol){
+  const key = mol.atoms.map(a=>a.element).sort().join('');
+  for(const k in MOL_TEMPLATES){
+    if([...MOL_TEMPLATES[k].els].sort().join('') === key) return MOL_TEMPLATES[k];
+  }
+  return null;
+}
+
+let arranging = false;
+function arrangeMolecule(seedAtom){
+  if(arranging) return;
+  const mol = identifyMolecules().find(m=>m.group.some(a=>a.id===seedAtom.id));
+  if(!mol || mol.group.length < 2) return;
+  const atoms = mol.group;
+  const template = findTemplate(mol);
+  let targets;
+  if(template){
+    const used = new Set();
+    targets = atoms.map(atom=>{
+      const idx = template.els.findIndex((el,i)=>el===atom.element && !used.has(i));
+      if(idx>=0){ used.add(idx); return {atom, pos:new THREE.Vector3(...template.coords[idx])}; }
+      return {atom, pos:atom.mesh.position.clone()};
+    });
+  } else {
+    // VSEPR 简单迭代松弛
+    const posMap = new Map(atoms.map(a=>[a.id, a.mesh.position.clone()]));
+    for(let iter=0; iter<50; iter++){
+      atoms.forEach(atom=>{
+        const nbrs = atom.bonds.map(ba=>getAtom(ba.b)).filter(Boolean);
+        if(nbrs.length < 2) return;
+        const center = posMap.get(atom.id);
+        const n = nbrs.length;
+        const angle = n===2?Math.PI : n===3?2*Math.PI/3 : 1.91;
+        nbrs.forEach((nb,j)=>{
+          const a0 = (j/n)*2*Math.PI;
+          const target = new THREE.Vector3(Math.cos(a0), n===4?0.4:0, Math.sin(a0)).normalize();
+          const desired = center.clone().add(target.multiplyScalar(bondLen(atom.element, nb.element)));
+          const cur = posMap.get(nb.id);
+          cur.lerp(desired, 0.15);
+        });
+      });
+    }
+    targets = atoms.map(a=>({atom:a, pos:posMap.get(a.id)}));
+  }
+  // 质心移到 (0, 1.5, 0)
+  const center = new THREE.Vector3();
+  targets.forEach(t=>center.add(t.pos));
+  center.divideScalar(targets.length);
+  targets.forEach(t=>t.pos.sub(center).add(new THREE.Vector3(0,1.5,0)));
+  const starts = targets.map(t=>t.atom.mesh.position.clone());
+  arranging = true;
+  const t0 = performance.now(), dur = 600;
+  function step(now){
+    let k = (now-t0)/dur; if(k>1) k=1;
+    const e = 1-Math.pow(1-k,3);
+    targets.forEach((t,i)=>t.atom.mesh.position.lerpVectors(starts[i], t.pos, e));
+    asmBonds.forEach(b=>{ const a=getAtom(b.a),bb=getAtom(b.b); if(a&&bb) updateBondMesh(b); });
+    if(k<1) requestAnimationFrame(step);
+    else { arranging=false; refreshMolecules(); }
+  }
+  requestAnimationFrame(step);
 }
 function highlightAtom(atom, on){
   if(!atom) return;
@@ -2851,6 +2938,7 @@ function pickAtoms(e){
 }
 
 function onAssemblyClick(e){
+  if(arranging) return;
   if(activeView!=='assembly' || justDragged){ justDragged=false; return; }
   if(placingElement){
     const rect=renderer.domElement.getBoundingClientRect();
@@ -2952,6 +3040,29 @@ document.getElementById('btnDeleteAtom').addEventListener('click',()=>{
 document.getElementById('btnClearAssembly').addEventListener('click',()=>{
   [...asmAtoms].forEach(a=>removeAtom(a));
   setStatus('已清空场景');
+});
+document.getElementById('btnDemoArrange').addEventListener('click',()=>{
+  if(activeView!=='assembly') return;
+  [...asmAtoms].forEach(a=>removeAtom(a));
+  setStatus('演示中：Cl2 成键聚拢…');
+  const c1=addAtom('Cl',new THREE.Vector3(-5,2,-5));
+  const c2=addAtom('Cl',new THREE.Vector3(5,2,5));
+  setTimeout(()=>{ addBond(c1,c2); setStatus('演示中：H2O 折角…'); }, 200);
+  setTimeout(()=>{
+    [...asmAtoms].forEach(a=>removeAtom(a));
+    const o=addAtom('O',new THREE.Vector3(0,0,0));
+    const h1=addAtom('H',new THREE.Vector3(3,0,0));
+    const h2=addAtom('H',new THREE.Vector3(-3,0,1));
+    addBond(o,h1); addBond(o,h2);
+    setStatus('演示中：CH4 正四面体…');
+  }, 1200);
+  setTimeout(()=>{
+    [...asmAtoms].forEach(a=>removeAtom(a));
+    const c=addAtom('C',new THREE.Vector3(0,0,0));
+    const hs=[addAtom('H',new THREE.Vector3(3,0,0)),addAtom('H',new THREE.Vector3(-3,0,0)),addAtom('H',new THREE.Vector3(0,3,0)),addAtom('H',new THREE.Vector3(0,-3,0))];
+    hs.forEach((h,i)=>setTimeout(()=>addBond(c,h), i*250));
+    setStatus('演示完成：查看三个分子整形效果');
+  }, 2200);
 });
 window.addEventListener('keydown',e=>{
   if(activeView!=='assembly') return;
