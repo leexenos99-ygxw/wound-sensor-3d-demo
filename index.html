@@ -2021,7 +2021,10 @@ function switchView(name){
   } else if(name==='assembly'){
     camera.position.set(0, 3.5, 9);
     controls.target.set(0, 0.5, 0);
-    controls.enabled = !assemblyMode; // 组装模式下禁用轨道控制，让点击/拖动原子生效
+    assemblyMode = true;
+    document.getElementById('btnAssemblyMode').classList.add('on');
+    controls.enabled = false;
+    setStatus('组装模式：左侧托盘选原子，点击地面放置；成键连线');
     refreshAssemblyUI();
   }
 }
@@ -2947,7 +2950,7 @@ document.getElementById('btnDeleteAtom').addEventListener('click',()=>{
   else setStatus('先在场景里点选一个原子');
 });
 document.getElementById('btnClearAssembly').addEventListener('click',()=>{
-  [...atoms].forEach(a=>removeAtom(a));
+  [...asmAtoms].forEach(a=>removeAtom(a));
   setStatus('已清空场景');
 });
 window.addEventListener('keydown',e=>{
