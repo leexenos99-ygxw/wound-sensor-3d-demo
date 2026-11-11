@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>可视化生物传感 · 3D 演示台（亲核反应 / 智能敷料分层）</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2318181B'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%233ECF8E'/%3E%3C/svg%3E">
+<style>
+  /* ===== Design system: Vercel / Linear 风格 · 中性 Zinc + 单点缀荧光绿 ===== */
+  :root{
+    --bg:#FAFAFA;
+    --ink:#18181B;            /* zinc-900 主文字 */
+    --ink-2:#52525B;          /* zinc-600 次级文字 */
+    --ink-3:#A1A1AA;          /* zinc-400 弱化文字 */
+    --line:#E4E4E7;           /* zinc-200 极细边框 */
+    --line-2:#F4F4F5;         /* zinc-100 */
+    --accent:#3ECF8E;         /* 荧光绿，唯一点缀色 */
+    --accent-dim:#0E9F6E;
+    --glass:rgba(255,255,255,.55);
+    --radius:10px;
+    --font:"Inter","-apple-system","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;}
+  body{font-family:var(--font);background:var(--bg);color:var(--ink);
+       overflow:hidden;
+       background-image:radial-gradient(1200px 500px at 50% -10%,rgba(255,255,255,.9),rgba(255,255,255,0) 70%);}
+  #app{display:grid;grid-template-rows:auto 1fr auto;height:100vh;}
+
+  /* ---- 顶栏：极简、留白充足 ---- */
+  header{padding:18px 26px;display:flex;align-items:center;gap:20px;z-index:5;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-text h1{font-size:16px;font-weight:700;letter-spacing:-.01em;}
+  .brand-text .sub{font-size:12px;color:var(--ink-3);font-weight:400;margin-top:2px;}
+  .hdr-right{margin-left:auto;display:flex;gap:8px;}
+  .badge{font-size:11px;font-weight:500;color:var(--ink-2);padding:5px 10px;
+         border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.6);}
+
+  /* ---- 视图切换 Tabs ---- */
+  .view-tabs{display:flex;gap:4px;background:rgba(255,255,255,.6);border:1px solid var(--line);
+             border-radius:10px;padding:4px;}
+  .view-tab{border:0;background:transparent;font-family:var(--font);font-size:12.5px;font-weight:600;
+            color:var(--ink-2);padding:7px 14px;border-radius:7px;cursor:pointer;transition:all .12s;}
+  .view-tab:hover{color:var(--ink);}
+  .view-tab.active{background:var(--ink);color:#fff;}
+
+  /* ---- 主体：非对称布局（左分步 / 右物种，错落排布）---- */
+  main{position:relative;min-height:0;}
+  #canvasBox{position:absolute;inset:0;}
+  #canvasBox canvas{display:block;}
+  .glass{background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+         border:1px solid rgba(255,255,255,.7);box-shadow:0 1px 2px rgba(24,24,27,.04),0 12px 32px -16px rgba(24,24,27,.12);}
+  .panel{position:absolute;width:236px;padding:16px;border-radius:var(--radius);z-index:3;overflow:auto;}
+  #stagePanel{left:22px;top:18px;bottom:auto;max-height:calc(100% - 36px);}
+  #infoPanel{right:22px;top:38%;transform:translateY(-50%);max-height:56%;}
+  #dressingStagePanel{left:22px;top:18px;bottom:auto;max-height:calc(100% - 36px);}
+  #dressingInfoPanel{right:22px;top:38%;transform:translateY(-50%);max-height:56%;}
+  .panel-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;}
+  .panel-head h2{font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase;}
+  .panel-head .count{font-size:11px;color:var(--ink-3);}
+  .stage-item{border:1px solid transparent;border-radius:8px;padding:10px 11px;margin-bottom:7px;cursor:pointer;
+              background:rgba(255,255,255,.45);border:1px solid var(--line-2);
+              transition:border-color .15s,background .15s,transform .15s;}
+  .stage-item:hover{border-color:var(--line);transform:translateY(-1px);}
+  .stage-item .n{font-size:10px;font-weight:600;color:var(--ink-3);letter-spacing:.05em;font-variant-numeric:tabular-nums;}
+  .stage-item .t{font-size:13px;font-weight:600;color:var(--ink);margin-top:3px;}
+  .stage-item .d{font-size:11px;font-weight:400;color:var(--ink-2);margin-top:3px;line-height:1.5;}
+  .stage-item.active{background:#fff;border-color:var(--ink);transform:translateY(-1px);}
+  .stage-item.active .n{color:var(--accent);}
+  #infoBody .species{font-size:14px;font-weight:700;color:var(--ink);margin-bottom:5px;}
+  #infoBody .desc{font-size:12px;font-weight:400;color:var(--ink-2);line-height:1.6;}
+  #infoBody .placeholder{font-size:12px;color:var(--ink-3);line-height:1.6;}
+  #dressingInfoBody .species{font-size:14px;font-weight:700;color:var(--ink);margin-bottom:5px;}
+  #dressingInfoBody .desc{font-size:12px;font-weight:400;color:var(--ink-2);line-height:1.6;}
+  #dressingInfoBody .placeholder{font-size:12px;color:var(--ink-3);line-height:1.6;}
+  #flowHint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;
+            font-size:11px;color:var(--ink-2);padding:6px 14px;border-radius:999px;z-index:2;
+            background:var(--glass);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.7);
+            box-shadow:0 1px 2px rgba(24,24,27,.04);}
+  #flowHint .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  #dressingHint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;
+            font-size:11px;color:var(--ink-2);padding:6px 14px;border-radius:999px;z-index:2;
+            background:var(--glass);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.7);
+            box-shadow:0 1px 2px rgba(24,24,27,.04);}
+  #dressingHint .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  #fpsNote{position:absolute;right:272px;top:18px;font-size:10px;font-weight:500;color:var(--ink-2);
+           background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:4px 10px;z-index:2;display:none;}
+
+  /* ---- 底部控制台：悬浮磨砂 Dock ---- */
+  footer{padding:0 26px 22px;z-index:5;}
+  .dock{padding:14px 18px 16px;border-radius:14px;}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .row + .row{margin-top:14px;}
+  .btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:8px;
+       padding:8px 13px;font-size:12.5px;font-weight:600;font-family:var(--font);color:var(--ink);
+       background:rgba(255,255,255,.7);cursor:pointer;transition:all .12s;}
+  .btn:hover{border-color:var(--ink-3);transform:translateY(-1px);}
+  .btn svg{flex:none;}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .btn.primary:hover{background:#27272A;transform:translateY(-1px);}
+  .btn.chip{border-radius:999px;padding:6px 13px;}
+  .btn.chip[data-active]{border-color:var(--ink);color:var(--ink);}
+  .divider{width:1px;height:18px;background:var(--line);margin:0 2px;}
+  .group-label{font-size:11px;font-weight:500;color:var(--ink-3);margin-right:2px;}
+  .toggle{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:500;color:var(--ink-2);cursor:pointer;user-select:none;}
+  .toggle input{display:none;}
+  .toggle .sw{width:30px;height:17px;border-radius:999px;background:#E4E4E7;position:relative;transition:background .15s;flex:none;}
+  .toggle .sw::after{content:'';position:absolute;width:13px;height:13px;border-radius:50%;background:#fff;
+                     top:2px;left:2px;box-shadow:0 1px 2px rgba(24,24,27,.2);transition:left .15s;}
+  .toggle input:checked + .sw{background:var(--accent);}
+  .toggle input:checked + .sw::after{left:15px;}
+  .spacer{flex:1;}
+  #timeLabel{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;min-width:44px;text-align:right;}
+  #stageNow{font-size:12px;color:var(--ink-2);}
+  #stageNow b{font-weight:700;color:var(--ink);}
+  #dressingTimeLabel{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;min-width:44px;text-align:right;}
+  #dressingStageNow{font-size:12px;color:var(--ink-2);}
+  #dressingStageNow b{font-weight:700;color:var(--ink);}
+  #timeline{flex:1;min-width:160px;height:18px;cursor:pointer;appearance:none;-webkit-appearance:none;background:transparent;}
+  #timeline::-webkit-slider-runnable-track{height:4px;border-radius:999px;background:linear-gradient(to right,var(--accent) var(--fill,0%),#E4E4E7 var(--fill,0%));}
+  #timeline::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+     background:#fff;border:2px solid var(--ink);margin-top:-5px;box-shadow:0 1px 3px rgba(24,24,27,.18);}
+  #timeline::-moz-range-track{height:4px;border-radius:999px;background:#E4E4E7;}
+  #timeline::-moz-range-progress{background:var(--accent);height:4px;border-radius:999px;}
+  #timeline::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--ink);}
+  #dressingTimeline{flex:1;min-width:160px;height:18px;cursor:pointer;appearance:none;-webkit-appearance:none;background:transparent;}
+  #dressingTimeline::-webkit-slider-runnable-track{height:4px;border-radius:999px;background:linear-gradient(to right,var(--accent) var(--fill,0%),#E4E4E7 var(--fill,0%));}
+  #dressingTimeline::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+     background:#fff;border:2px solid var(--ink);margin-top:-5px;box-shadow:0 1px 3px rgba(24,24,27,.18);}
+  #dressingTimeline::-moz-range-track{height:4px;border-radius:999px;background:#E4E4E7;}
+  #dressingTimeline::-moz-range-progress{background:var(--accent);height:4px;border-radius:999px;}
+  #dressingTimeline::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--ink);}
+  #explosion{flex:1;min-width:160px;height:18px;cursor:pointer;appearance:none;-webkit-appearance:none;background:transparent;}
+  #explosion::-webkit-slider-runnable-track{height:4px;border-radius:999px;background:#E4E4E7;}
+  #explosion::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+     background:#fff;border:2px solid var(--ink);margin-top:-5px;box-shadow:0 1px 3px rgba(24,24,27,.18);}
+  #explosion::-moz-range-track{height:4px;border-radius:999px;background:#E4E4E7;}
+  #explosion::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--ink);}
+
+  /* ===== 分子组装模式 ===== */
+  #assemblyTrayPanel{left:22px;top:18px;width:260px;max-height:calc(100% - 120px);}
+  .atom-tray{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:4px 2px;}
+  .atom-btn{min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    border:1px solid #E4E4E7;border-radius:8px;background:#fff;cursor:pointer;transition:all .15s;
+    font-size:12px;color:var(--ink);}
+  .atom-btn:hover{border-color:var(--ink);transform:translateY(-1px);}
+  .atom-btn.selected{border-color:#3ECF8E;box-shadow:0 0 0 2px rgba(62,207,142,.18);}
+  .atom-dot{width:18px;height:18px;border-radius:50%;margin-bottom:3px;box-shadow:inset -2px -2px 4px rgba(0,0,0,.2);}
+  #assemblyInfoBody{padding:8px 10px;max-height:280px;overflow-y:auto;font-size:13px;line-height:1.6;}
+  .mol-card{padding:8px 10px;margin-bottom:6px;border-radius:8px;background:#F4F4F5;border-left:3px solid #3ECF8E;}
+  .mol-card .mol-name{font-weight:700;font-size:14px;color:var(--ink);}
+  .mol-card .mol-formula{font-size:12px;color:var(--ink-2);margin-top:2px;}
+  .mol-card.warn{border-left-color:#DC2626;background:#FEF2F2;}
+  .mol-card.warn .mol-name{color:#B91C1C;}
+  #btnBond.on{background:#3ECF8E;color:#0B3D2E;border-color:#3ECF8E;}
+  #btnAssemblyMode.on{background:#18181B;color:#fff;}
+  #btnLonePair.on{background:#18181B;color:#fff;border-color:#18181B;}
+  #btnDeleteAtom.on{background:#18181B;color:#fff;border-color:#18181B;}
+  #trayToggle{display:none;}
+  #trayClose{display:none;}
+</style>
+
+<style id="v2-css">
+/* v2：强调色只用 #3ECF8E，中性色 #1F2933 / #6B7785 / #E4E8ED */
+.gen-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
+.gen-btn{font:12px/1 ui-monospace,Menlo,Consolas,monospace;padding:7px 9px;border-radius:8px;
+  border:1px solid #E4E8ED;background:#fff;color:#1F2933;cursor:pointer;transition:.15s}
+.gen-btn:hover{border-color:#3ECF8E;color:#1F2933}
+.gen-btn:active{background:#F2FBF7}
+.reason-card{margin-top:10px;padding:10px 12px;border-radius:10px;background:#F7F8FA;
+  border:1px solid #E4E8ED;font:12px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:#1F2933}
+.rc-head{font-size:13px;font-weight:600;margin-bottom:6px}
+.rc-head span{font-weight:400;color:#6B7785;margin-left:6px;font-size:12px}
+.rc-body{color:#1F2933}
+.rc-body b{color:#2F9E74;font-weight:600}
+.rc-note{margin-top:6px;padding-top:6px;border-top:1px dashed #E4E8ED;color:#6B7785;font-size:11.5px}
+canvas{touch-action:none}
+body{overscroll-behavior:none}
+@media (max-width:760px){
+  /* 手机竖屏：托盘改成底部抽屉，Dock 分两行，点击热区 ≥44px */
+  header{padding:10px 12px;gap:8px;flex-wrap:wrap}
+  .brand h1{font-size:15px;line-height:1.3}
+  .brand .sub{display:none}
+  .view-tabs{order:3;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .view-tab{flex:0 0 auto;min-height:40px;padding:8px 9px;font-size:12px}
+  .brand svg{width:18px;height:18px}
+  @media (max-width:420px){
+    header{padding:8px 10px}
+    .brand h1{font-size:13.5px}
+    .view-tab{padding:8px 7px;font-size:11.5px}
+  }
+  #assemblyHint{display:none}
+  #trayToggle{display:inline-flex}
+  #trayClose{display:none}
+  #assemblyTrayPanel{display:none;position:fixed;left:8px;right:8px;top:54px;bottom:8px;
+    width:auto;max-height:none;overflow-y:auto;padding:10px 12px;z-index:9}
+  body.tray-open #assemblyTrayPanel{display:block}
+  body.tray-open .dock{display:none}
+  #trayClose{display:inline-flex}
+  #atomTray{grid-template-columns:repeat(7,1fr);gap:6px}
+  .atom-btn{min-width:0;min-height:48px;padding:5px 0;font-size:12px}
+  .atom-dot{width:15px;height:15px}
+  .gen-row{max-height:76px;overflow-y:auto}
+  .gen-btn{min-height:40px}
+  #assemblyInfoBody{max-height:110px}
+  .dock{left:8px;right:8px;bottom:8px;padding:10px 12px}
+  .dock .row{flex-wrap:wrap;gap:6px}
+  .btn{min-height:44px;font-size:13px}
+  .row .divider,.row .spacer{display:none}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#18181B"/>
+        <circle cx="12" cy="12" r="4.2" fill="#3ECF8E"/>
+      </svg>
+      <div class="brand-text">
+        <h1>可视化生物传感 · 3D 演示台</h1>
+        <p class="sub">拖拽旋转 / 滚轮缩放 / 右键平移 / 点击对象看说明</p>
+      </div>
+    </div>
+    <nav class="view-tabs" aria-label="演示切换">
+      <button class="view-tab active" data-view="sn2">亲核反应</button>
+      <button class="view-tab" data-view="dressing">智能敷料分层</button>
+      <button class="view-tab" data-view="assembly">分子组装</button>
+    </nav>
+    <div class="hdr-right">
+      <span class="badge" id="badgeSn2">四面体 109.5° · 过渡态五配位</span>
+      <span class="badge" id="badgeDressing" style="display:none">四层结构 · 六窗并行</span>
+      <span class="badge" id="badgeAssembly" style="display:none">自由搭建 · 实时识别分子</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="canvasBox"></div>
+    <div id="fpsNote">帧率偏低，已自动关闭粒子以保流畅</div>
+
+    <!-- ===== 视图 A：SN2 亲核取代 ===== -->
+    <div class="view" id="view-sn2">
+      <div id="flowHint"><span class="dot"></span>箭头 = 电子对流动方向（可开关）</div>
+      <aside class="panel glass" id="stagePanel">
+        <div class="panel-head"><h2>反应分步</h2><span class="count" id="stageCount"></span></div>
+        <div id="stageList"></div>
+      </aside>
+      <aside class="panel glass" id="infoPanel">
+        <div class="panel-head"><h2>选中物种</h2></div>
+        <div id="infoBody"><p class="placeholder">点击场景里的某个分子查看说明</p></div>
+      </aside>
+    </div>
+
+    <!-- ===== 视图 B：智能敷料分层 ===== -->
+    <div class="view" id="view-dressing" style="display:none">
+      <div id="dressingHint"><span class="dot"></span>绿点 = 渗液流动路径；点击层或窗口查看说明</div>
+      <aside class="panel glass" id="dressingStagePanel">
+        <div class="panel-head"><h2>敷料结构</h2><span class="count" id="dressingStageCount"></span></div>
+        <div id="dressingStageList"></div>
+      </aside>
+      <aside class="panel glass" id="dressingInfoPanel">
+        <div class="panel-head"><h2>结构说明</h2></div>
+        <div id="dressingInfoBody"><p class="placeholder">点击场景里的层或窗口查看说明</p></div>
+      </aside>
+    </div>
+
+    <!-- ===== 视图 C：分子组装 ===== -->
+    <div class="view" id="view-assembly" style="display:none">
+      <div id="assemblyHint"><span class="dot"></span>从左侧托盘选原子，点击场景放置；成键模式下依次点两个原子成键</div>
+      <aside class="panel glass" id="assemblyTrayPanel">
+        <div class="panel-head"><h2>原子托盘</h2><span class="count" id="assemblyAtomCount"></span><button class="btn" id="trayClose" style="margin-left:auto">收起</button></div>
+        <div id="atomTray" class="atom-tray"></div>
+        <div class="panel-head" style="margin-top:14px"><h2>标准分子</h2><span class="count">一键生成</span></div><div id="genRow" class="gen-row"></div>
+        <div class="panel-head" style="margin-top:10px"><h2>分子识别</h2></div>
+        <div id="assemblyInfoBody"><p class="placeholder">放置原子并成键后，这里显示识别到的分子</p></div>
+        <div id="reasonCard" class="reason-card" style="display:none"></div>
+      </aside>
+    </div>
+  </main>
+
+  <footer>
+    <!-- ===== Dock A：SN2 控制台 ===== -->
+    <div class="dock glass" id="dock-sn2">
+      <div class="row">
+        <button class="btn primary" id="btnPlay" aria-label="播放">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72c0 .9.97 1.44 1.75.97l10.5-6.86a1.13 1.13 0 0 0 0-1.94L9.75 4.17A1.14 1.14 0 0 0 8 5.14Z"/></svg>
+          <span>播放</span>
+        </button>
+        <button class="btn" id="btnPrev" aria-label="上一步">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg>
+          <span>上一步</span>
+        </button>
+        <button class="btn" id="btnNext" aria-label="下一步">
+          <span>下一步</span>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg>
+        </button>
+        <span class="divider"></span>
+        <button class="btn" id="btnReset" aria-label="重置">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/></svg>
+          <span>重置</span>
+        </button>
+        <span class="divider"></span>
+        <span class="group-label">视角</span>
+        <button class="btn chip" data-view="front">正面</button>
+        <button class="btn chip" data-view="side">侧面</button>
+        <button class="btn chip" data-view="top">俯视</button>
+        <span class="divider"></span>
+        <label class="toggle"><input type="checkbox" id="chkFlow" checked><span class="sw"></span>电子流动</label>
+        <span class="spacer"></span>
+        <span id="stageNow"></span>
+        <span id="timeLabel">0.0s</span>
+      </div>
+      <div class="row">
+        <input type="range" id="timeline" min="0" max="1000" value="0">
+      </div>
+    </div>
+
+    <!-- ===== Dock B：智能敷料控制台 ===== -->
+    <div class="dock glass" id="dock-dressing" style="display:none">
+      <div class="row">
+        <button class="btn primary" id="dressingPlay" aria-label="播放渗液动画">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72c0 .9.97 1.44 1.75.97l10.5-6.86a1.13 1.13 0 0 0 0-1.94L9.75 4.17A1.14 1.14 0 0 0 8 5.14Z"/></svg>
+          <span>播放渗液</span>
+        </button>
+        <button class="btn" id="dressingReset" aria-label="重置">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/></svg>
+          <span>重置</span>
+        </button>
+        <span class="divider"></span>
+        <span class="group-label">视角</span>
+        <button class="btn chip" data-dview="overall">整体</button>
+        <button class="btn chip" data-dview="top">顶视</button>
+        <button class="btn chip" data-dview="side">侧视</button>
+        <span class="divider"></span>
+        <label class="toggle"><input type="checkbox" id="chkDressingFlow" checked><span class="sw"></span>渗液流动</label>
+        <span class="spacer"></span>
+        <span id="dressingStageNow"></span>
+        <span id="dressingTimeLabel">0.0s</span>
+      </div>
+      <div class="row">
+        <span class="group-label">分层展开</span>
+        <input type="range" id="explosion" min="15" max="100" value="45" aria-label="分层展开">
+        <span id="explosionLabel" style="font-size:12px;color:var(--ink-2);min-width:46px;text-align:right;">0.45</span>
+        <span class="divider" style="margin-left:6px;"></span>
+        <span class="group-label">渗液进度</span>
+        <input type="range" id="dressingTimeline" min="0" max="1000" value="0" aria-label="渗液进度">
+      </div>
+    </div>
+    <!-- ===== Dock C：分子组装控制台 ===== -->
+    <div class="dock glass" id="dock-assembly" style="display:none">
+      <div class="row">
+        <button class="btn primary" id="btnAssemblyMode">组装模式</button>
+        <button class="btn" id="trayToggle">托盘</button>
+        <button class="btn" id="btnBond">成键</button>
+        <button class="btn" id="btnDeleteAtom">删除选中</button>
+        <button class="btn" id="btnClearAssembly">清空</button>
+      <button class="btn" id="btnLonePair">孤对电子</button>
+      <button class="btn" id="btnDemoArrange">演示整形</button>
+      <button class="btn" id="btnSelfTest">自检</button>
+        <span class="divider"></span>
+        <span class="group-label">提示</span>
+        <span id="assemblyStatus" style="font-size:12px;color:var(--ink-2)">组装模式：点击原子托盘按钮放置原子</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+
+
+
+{{THREE}}
+
+<script>
+{{ADDONS}}
+</script>
+<script>
+{{CORE}}
+</script>
+<script>
+{{APP}}
+</script>
+
+
+</body>
+</html>

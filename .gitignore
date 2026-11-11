@@ -10,3 +10,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Build output —— 由 `node build.mjs` 重新生成，不入库
+# （index.html 是它的发布副本，入库）
+dist/
