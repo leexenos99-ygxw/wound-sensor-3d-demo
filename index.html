@@ -144,16 +144,16 @@
     border:1px solid #E4E4E7;border-radius:8px;background:#fff;cursor:pointer;transition:all .15s;
     font-size:12px;color:var(--ink);}
   .atom-btn:hover{border-color:var(--ink);transform:translateY(-1px);}
-  .atom-btn.selected{border-color:#2563EB;box-shadow:0 0 0 2px rgba(37,99,235,.2);}
+  .atom-btn.selected{border-color:#3ECF8E;box-shadow:0 0 0 2px rgba(62,207,142,.18);}
   .atom-dot{width:18px;height:18px;border-radius:50%;margin-bottom:3px;box-shadow:inset -2px -2px 4px rgba(0,0,0,.2);}
   #assemblyInfoBody{padding:8px 10px;max-height:280px;overflow-y:auto;font-size:13px;line-height:1.6;}
-  .mol-card{padding:8px 10px;margin-bottom:6px;border-radius:8px;background:#F4F4F5;border-left:3px solid #2563EB;}
+  .mol-card{padding:8px 10px;margin-bottom:6px;border-radius:8px;background:#F4F4F5;border-left:3px solid #3ECF8E;}
   .mol-card .mol-name{font-weight:700;font-size:14px;color:var(--ink);}
   .mol-card .mol-formula{font-size:12px;color:var(--ink-2);margin-top:2px;}
   .mol-card.warn{border-left-color:#DC2626;background:#FEF2F2;}
   .mol-card.warn .mol-name{color:#B91C1C;}
-  #btnBond.on{background:#2563EB;color:#fff;border-color:#2563EB;}
-  #btnAssemblyMode.on{background:#0B1220;color:#fff;}
+  #btnBond.on{background:#3ECF8E;color:#0B3D2E;border-color:#3ECF8E;}
+  #btnAssemblyMode.on{background:#18181B;color:#fff;}
 </style>
 </head>
 <body>
@@ -299,6 +299,7 @@
         <button class="btn" id="btnDeleteAtom">删除选中</button>
         <button class="btn" id="btnClearAssembly">清空</button>
       <button class="btn" id="btnDemoArrange">演示整形</button>
+      <button class="btn" id="btnSelfTest">自检</button>
         <span class="divider"></span>
         <span class="group-label">提示</span>
         <span id="assemblyStatus" style="font-size:12px;color:var(--ink-2)">组装模式：点击原子托盘按钮放置原子</span>
@@ -306,6 +307,7 @@
     </div>
   </footer>
 </div>
+
 
 
 
@@ -1947,6 +1949,10 @@ class CSS2DRenderer {
 
 
 
+
+
+
+
 /* =====================================================================
    共享引擎：渲染器 / 相机 / 控制器 / 标签渲染器 / 灯光 / 主循环框架
    两个视图（SN2 亲核取代、智能敷料分层）共用一套引擎，各用独立 scene。
@@ -2688,6 +2694,8 @@ const MOLECULE_LIBRARY = [
   {name:'氯化钠 NaCl',      formula:'NaCl',  counts:{Na:1,Cl:1}},
   {name:'氧气 O₂',         formula:'O₂',    counts:{O:2}},
   {name:'氢气 H₂',         formula:'H₂',    counts:{H:2}},
+  {name:'氮气 N₂',         formula:'N₂',    counts:{N:2}},
+  {name:'氯气 Cl₂',        formula:'Cl₂',   counts:{Cl:2}},
   {name:'甲醇 CH₃OH',      formula:'CH₃OH', counts:{C:1,O:1,H:4}},
   {name:'乙烯 C₂H₄',       formula:'C₂H₄',  counts:{C:2,H:4}},
   {name:'乙烷 C₂H₆',       formula:'C₂H₆',  counts:{C:2,H:6}},
@@ -2718,6 +2726,7 @@ ELEMENTS.forEach(el=>{
   btn.addEventListener('click',()=>{
     document.querySelectorAll('.atom-btn').forEach(b=>b.classList.remove('selected'));
     btn.classList.add('selected');
+    if(bondingMode) exitBonding();
     placingElement = el;
     setStatus(`已选 ${el}，点击场景地面放置；Esc 取消选择`);
   });
@@ -2791,6 +2800,8 @@ function flashAtom(atom){
 }
 
 // ===== 分子几何整形 =====
+/* ================= 分子几何：键长表 + 构型模板 + 规划器 ================= */
+/* @GEO-BEGIN */
 const BOND_LENGTHS = {
   'H-H':0.74,'H-C':1.09,'H-N':1.01,'H-O':0.96,'H-Cl':1.27,'H-Na':1.89,
   'C-C':1.54,'C-N':1.47,'C-O':1.43,'C-Cl':1.77,
@@ -2802,6 +2813,8 @@ function bondLen(el1,el2){
   return BOND_LENGTHS[el1+'-'+el2] || BOND_LENGTHS[el2+'-'+el1] || 1.5;
 }
 
+// 目标构型表。els 是元素序列，coords 与之一一对应；键长取实验值，角度取 VSEPR 理想值。
+// 想加新分子：照格式补一条即可，顺序无关，按元素多重集匹配。
 const MOL_TEMPLATES = {
   'H2':   {els:['H','H'], coords:[[-0.37,0,0],[0.37,0,0]]},
   'O2':   {els:['O','O'], coords:[[-0.6,0,0],[0.6,0,0]]},
@@ -2809,24 +2822,44 @@ const MOL_TEMPLATES = {
   'Cl2':  {els:['Cl','Cl'], coords:[[-0.99,0,0],[0.99,0,0]]},
   'H2O':  {els:['O','H','H'], coords:[[0,0,0],[0.76,0.59,0],[-0.76,0.59,0]]},
   'CO2':  {els:['C','O','O'], coords:[[0,0,0],[1.16,0,0],[-1.16,0,0]]},
-  'CH4':  {els:['C','H','H','H','H'], coords:[[0,0,0],[0.63,0.63,0.63],[0.63,-0.63,-0.63],[-0.63,0.63,-0.60],[-0.63,-0.63,0.63]]},
-  'NH3':  {els:['N','H','H','H'], coords:[[0,0,0],[0.81,0,-0.60],[-0.40,0.70,-0.60],[-0.40,-0.70,-0.60]]},
+  'CH4':  {els:['C','H','H','H','H'], coords:[[0,0,0],[0.63,0.63,0.63],[0.63,-0.63,-0.63],[-0.63,0.63,-0.63],[-0.63,-0.63,0.63]]},
+  'NH3':  {els:['N','H','H','H'], coords:[[0,0,0],[0.9375,0,-0.3758],[-0.4687,0.8119,-0.3758],[-0.4687,-0.8119,-0.3758]]},
 };
-function findTemplate(mol){
-  const key = mol.atoms.map(a=>a.element).sort().join('');
+function findTemplate(atoms){
+  const key = atoms.map(a=>a.element).sort().join('');
   for(const k in MOL_TEMPLATES){
     if([...MOL_TEMPLATES[k].els].sort().join('') === key) return MOL_TEMPLATES[k];
   }
   return null;
 }
 
-let arranging = false;
-function arrangeMolecule(seedAtom){
-  if(arranging) return;
-  const mol = identifyMolecules().find(m=>m.group.some(a=>a.id===seedAtom.id));
-  if(!mol || mol.group.length < 2) return;
-  const atoms = mol.group;
-  const template = findTemplate(mol);
+// 理想键角：2 配位 180°、3 配位 120°、4 配位及以上 109.47°
+const IDEAL_ANGLE = n => n===2 ? Math.PI : n===3 ? 2*Math.PI/3 : 1.91063;
+
+function perpTo(d){
+  const cand = Math.abs(d.y)<0.9 ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0);
+  const u = cand.clone().sub(d.clone().multiplyScalar(d.dot(cand)));
+  return u.length()<1e-6 ? new THREE.Vector3(1,0,0) : u.normalize();
+}
+function rotAxis(v, axis, ang){ return v.clone().applyAxisAngle(axis.clone().normalize(), ang); }
+
+// 给定中心原子已有的一个键方向 d，返回其余 n-1 个理想方向
+function idealDirs(n, d){
+  if(n===1) return [];
+  const ref = d || new THREE.Vector3(1,0,0);
+  const u = perpTo(ref);
+  if(n===2) return [rotAxis(ref,u,Math.PI)];
+  if(n===3) return [rotAxis(ref,u,2*Math.PI/3), rotAxis(ref,u,-2*Math.PI/3)];
+  const tilt = Math.acos(-1/3);
+  const base = rotAxis(ref,u,tilt);
+  const out=[];
+  for(let k=0;k<3;k++) out.push(rotAxis(base, ref, k*2*Math.PI/3));
+  return out;
+}
+
+// 纯几何规划：只算目标坐标，不动场景、不做动画，自检可直接同步调用
+function planGeometry(atoms){
+  const template = findTemplate(atoms);
   let targets;
   if(template){
     const used = new Set();
@@ -2836,31 +2869,57 @@ function arrangeMolecule(seedAtom){
       return {atom, pos:atom.mesh.position.clone()};
     });
   } else {
-    // VSEPR 简单迭代松弛
-    const posMap = new Map(atoms.map(a=>[a.id, a.mesh.position.clone()]));
-    for(let iter=0; iter<50; iter++){
-      atoms.forEach(atom=>{
-        const nbrs = atom.bonds.map(ba=>getAtom(ba.b)).filter(Boolean);
-        if(nbrs.length < 2) return;
-        const center = posMap.get(atom.id);
-        const n = nbrs.length;
-        const angle = n===2?Math.PI : n===3?2*Math.PI/3 : 1.91;
-        nbrs.forEach((nb,j)=>{
-          const a0 = (j/n)*2*Math.PI;
-          const target = new THREE.Vector3(Math.cos(a0), n===4?0.4:0, Math.sin(a0)).normalize();
-          const desired = center.clone().add(target.multiplyScalar(bondLen(atom.element, nb.element)));
-          const cur = posMap.get(nb.id);
-          cur.lerp(desired, 0.15);
+    // VSEPR 兜底：按每个中心的配位数生成理想方向，BFS 逐级摆放
+    const pos = new Map();
+    const placed = new Set();
+    const adj = at => at.bonds.map(ba=>getAtom(ba.b)).filter(Boolean);
+    const roots = atoms.slice().sort((a,b)=>adj(b).length-adj(a).length);
+    roots.forEach(root=>{
+      if(placed.has(root.id)) return;
+      pos.set(root.id, new THREE.Vector3(0,0,0)); placed.add(root.id);
+      const queue=[root];
+      while(queue.length){
+        const cur=queue.shift();
+        const c=pos.get(cur.id), nbrs=adj(cur);
+        if(nbrs.length<1) continue;
+        const done=nbrs.filter(n=>placed.has(n.id));
+        const todo=nbrs.filter(n=>!placed.has(n.id));
+        if(!todo.length) continue;
+        const d = done.length ? pos.get(done[0].id).clone().sub(c).normalize() : null;
+        const slots = idealDirs(nbrs.length, d);
+        const dirs = d ? slots : [new THREE.Vector3(1,0,0)].concat(slots);
+        todo.forEach((nb,i)=>{
+          const dir = dirs[i] || dirs[dirs.length-1] || new THREE.Vector3(1,0,0);
+          pos.set(nb.id, c.clone().add(dir.clone().multiplyScalar(bondLen(cur.element, nb.element))));
+          placed.add(nb.id); queue.push(nb);
         });
-      });
-    }
-    targets = atoms.map(a=>({atom:a, pos:posMap.get(a.id)}));
+      }
+    });
+    targets = atoms.map(a=>({atom:a, pos:pos.get(a.id) || a.mesh.position.clone()}));
   }
-  // 质心移到 (0, 1.5, 0)
+  // 质心平移到 (0, 1.5, 0)，抬离地面网格
   const center = new THREE.Vector3();
   targets.forEach(t=>center.add(t.pos));
-  center.divideScalar(targets.length);
+  center.divideScalar(targets.length||1);
   targets.forEach(t=>t.pos.sub(center).add(new THREE.Vector3(0,1.5,0)));
+  return targets;
+}
+/* @GEO-END */
+
+let arranging = false;
+let pendingPlan = null;
+let arrangeDisabled = false;   // 自检与批量构建时临时关掉动画
+
+function arrangeMolecule(seedAtom){
+  if(arrangeDisabled) return;
+  const mol = identifyMolecules().find(m=>m.group.some(a=>a.id===seedAtom.id));
+  if(!mol || mol.group.length<2) return;
+  if(arranging){ pendingPlan = mol; return; }   // 正在动画就排队，不丢请求
+  startArrange(mol);
+}
+
+function startArrange(mol){
+  const targets = planGeometry(mol.group);
   const starts = targets.map(t=>t.atom.mesh.position.clone());
   arranging = true;
   const t0 = performance.now(), dur = 600;
@@ -2868,15 +2927,23 @@ function arrangeMolecule(seedAtom){
     let k = (now-t0)/dur; if(k>1) k=1;
     const e = 1-Math.pow(1-k,3);
     targets.forEach((t,i)=>t.atom.mesh.position.lerpVectors(starts[i], t.pos, e));
-    asmBonds.forEach(b=>{ const a=getAtom(b.a),bb=getAtom(b.b); if(a&&bb) updateBondMesh(b); });
-    if(k<1) requestAnimationFrame(step);
-    else { arranging=false; refreshMolecules(); }
+    asmBonds.forEach(b=>updateBondMesh(b));
+    if(k<1){ requestAnimationFrame(step); }
+    else {
+      targets.forEach(t=>t.atom.mesh.position.copy(t.pos));
+      asmBonds.forEach(b=>updateBondMesh(b));
+      arranging = false;
+      refreshMolecules();
+      const next = pendingPlan; pendingPlan = null;
+      if(next) startArrange(next);
+    }
   }
   requestAnimationFrame(step);
 }
+
 function highlightAtom(atom, on){
   if(!atom) return;
-  if(on){ atom.mesh.material.emissive = new THREE.Color('#2563EB'); atom.mesh.material.emissiveIntensity = 0.45; }
+  if(on){ atom.mesh.material.emissive = new THREE.Color('#3ECF8E'); atom.mesh.material.emissiveIntensity = 0.55; }
   else  { atom.mesh.material.emissive = new THREE.Color(0x000000); atom.mesh.material.emissiveIntensity = 0; }
 }
 
@@ -2920,7 +2987,9 @@ function refreshMolecules(){
       card.className='mol-card';
       const name = m.match ? m.match.name : '未识别分子';
       const formula = m.match ? m.match.formula : formulaString(m.counts);
-      card.innerHTML=`<div class="mol-name">${name}</div><div class="mol-formula">${formula} · ${m.group.length} 个原子</div>`;
+      const hasFormula = m.match && name.replace(/\s/g,'').includes(m.match.formula.replace(/\s/g,''));
+      const meta = (hasFormula ? '' : formula + ' · ') + m.group.length + ' 个原子';
+      card.innerHTML=`<div class="mol-name">${name}</div><div class="mol-formula">${meta}</div>`;
       body.appendChild(card);
     });
   }
@@ -3028,7 +3097,12 @@ document.getElementById('btnAssemblyMode').addEventListener('click',()=>{
 });
 document.getElementById('btnBond').addEventListener('click',()=>{
   if(!assemblyMode){ setStatus('先点"组装模式"进入'); return; }
+  if(arranging){ setStatus('等整形动画结束再成键'); return; }
   bondingMode=!bondingMode;
+  if(bondingMode){                       // 成键优先于放置，避免两种模式互相吞点击
+    placingElement=null;
+    document.querySelectorAll('.atom-btn').forEach(b=>b.classList.remove('selected'));
+  }
   document.getElementById('btnBond').classList.toggle('on',bondingMode);
   if(!bondingMode) exitBonding();
   else setStatus('成键模式：依次点两个原子成键（Esc/右键退出）');
@@ -3079,8 +3153,122 @@ renderer.domElement.addEventListener('mousedown', onAssemblyDown);
 window.addEventListener('mousemove', onAssemblyMove);
 window.addEventListener('mouseup', onAssemblyUp);
 
+/* ================= 内置几何自检 ================= */
+function angleAt(vertex, p1, p2){
+  const v1=p1.mesh.position.clone().sub(vertex.mesh.position);
+  const v2=p2.mesh.position.clone().sub(vertex.mesh.position);
+  return v1.angleTo(v2)*180/Math.PI;
+}
+function distBetween(a,b){ return a.mesh.position.distanceTo(b.mesh.position); }
+function buildMol(spec, links){
+  const atoms = spec.map(([el,pos])=>addAtom(el, new THREE.Vector3(...pos)));
+  links.forEach(([i,j])=>addBond(atoms[i], atoms[j]));
+  return atoms;
+}
+function planNow(atoms){
+  planGeometry(atoms).forEach(t=>t.atom.mesh.position.copy(t.pos));
+  asmBonds.forEach(b=>updateBondMesh(b));
+}
+function showSelfTest(rows,pass,fail){
+  let el=document.getElementById('selfTestPanel');
+  if(!el){
+    el=document.createElement('div'); el.id='selfTestPanel';
+    el.style.cssText='position:fixed;right:16px;top:92px;z-index:9999;width:min(430px,92vw);max-height:66vh;overflow:auto;background:#fff;border:1px solid #E4E4E7;border-radius:10px;padding:14px 16px;font:12px/1.75 ui-monospace,Menlo,Consolas,monospace;color:#18181B;box-shadow:0 10px 30px rgba(0,0,0,.10)';
+    document.body.appendChild(el);
+  }
+  const head='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+    +'<span style="font-weight:600;font-size:13px">几何自检 · '+pass+' 通过 / '+fail+' 失败</span>'
+    +'<span id="selfTestClose" style="cursor:pointer;color:#A1A1AA;font-size:12px">关闭</span></div>';
+  const body=rows.map(r=>'<div style="display:flex;gap:8px;margin:2px 0">'
+    +'<span style="flex:0 0 34px;color:'+(r[1]?'#3ECF8E':'#DC2626')+'">'+(r[1]?'PASS':'FAIL')+'</span>'
+    +'<span style="flex:1">'+r[0]+'</span>'
+    +'<span style="color:#A1A1AA;white-space:nowrap">'+r[2]+'</span></div>').join('');
+  el.innerHTML=head+body;
+  document.getElementById('selfTestClose').onclick=()=>el.remove();
+}
+function runSelfTest(){
+  const rows=[]; let pass=0,fail=0;
+  const check=(name,cond,detail)=>{ rows.push([name,cond,detail||'']); cond?pass++:fail++; };
+  const reset=()=>{ [...asmAtoms].forEach(a=>removeAtom(a)); };
+  arrangeDisabled=true;
+  try{
+    // 1 H2O：从散乱位置起算
+    reset();
+    const h2o=buildMol([['O',[0,0,0]],['H',[4.2,1.1,0.3]],['H',[-1.3,-0.8,3.9]]],[[0,1],[0,2]]);
+    planNow(h2o);
+    const angH2O=angleAt(h2o[0],h2o[1],h2o[2]);
+    check('H₂O 键角 104.5°', Math.abs(angH2O-104.5)<=2.0, angH2O.toFixed(1)+'°');
+    check('H₂O 键长 0.96', Math.abs(distBetween(h2o[0],h2o[1])-0.96)<=0.05, distBetween(h2o[0],h2o[1]).toFixed(2));
+
+    // 2 NH3
+    reset();
+    const nh3=buildMol([['N',[0,0,0]],['H',[3,0.5,0]],['H',[-1.6,2.7,0.6]],['H',[-1.2,-2.9,-1.0]]],[[0,1],[0,2],[0,3]]);
+    planNow(nh3);
+    const a21=angleAt(nh3[0],nh3[1],nh3[2]);
+    const a22=angleAt(nh3[0],nh3[1],nh3[3]);
+    const a23=angleAt(nh3[0],nh3[2],nh3[3]);
+    const worstNH3=Math.max(Math.abs(a21-107),Math.abs(a22-107),Math.abs(a23-107));
+    check('NH₃ 键角 107°', worstNH3<=2.0, [a21,a22,a23].map(v=>v.toFixed(1)+'°').join(' / '));
+
+    // 3 CH4
+    reset();
+    const ch4=buildMol([['C',[0,0,0]],['H',[3.4,0,0]],['H',[-3.1,0.4,0]],['H',[0.2,3.3,0.5]],['H',[0,-0.4,-3.6]]],[[0,1],[0,2],[0,3],[0,4]]);
+    planNow(ch4);
+    let minAng=999, maxAng=0;
+    for(let i=1;i<=4;i++) for(let j=i+1;j<=4;j++){ const v=angleAt(ch4[0],ch4[i],ch4[j]); minAng=Math.min(minAng,v); maxAng=Math.max(maxAng,v); }
+    check('CH₄ 正四面体 109.47°', Math.max(Math.abs(minAng-109.47),Math.abs(maxAng-109.47))<=2.0, minAng.toFixed(1)+'° ~ '+maxAng.toFixed(1)+'°');
+
+    // 4 CO2
+    reset();
+    const co2=buildMol([['C',[0,0,0]],['O',[4.1,1.2,0.4]],['O',[-0.7,-1.1,3.4]]],[[0,1],[0,2]]);
+    planNow(co2);
+    const angCO2=angleAt(co2[0],co2[1],co2[2]);
+    check('CO₂ 直线 180°', Math.abs(angCO2-180)<=1.5, angCO2.toFixed(1)+'°');
+
+    // 5 Cl2 聚拢 + 抬离地面
+    reset();
+    const cl2=buildMol([['Cl',[-6,1,-5]],['Cl',[5,2,4]]],[[0,1]]);
+    planNow(cl2);
+    const dCl=distBetween(cl2[0],cl2[1]);
+    check('Cl₂ 键长 1.99', Math.abs(dCl-1.99)<=0.03, dCl.toFixed(2));
+    const cy=(cl2[0].mesh.position.y+cl2[1].mesh.position.y)/2;
+    check('Cl₂ 抬到 y≈1.5', cy>1.2 && cy<1.8, 'y='+cy.toFixed(2));
+    check('坐标为有限数', asmAtoms.every(a=>Number.isFinite(a.mesh.position.x)&&Number.isFinite(a.mesh.position.y)&&Number.isFinite(a.mesh.position.z)), '');
+
+    // 6 超价拒绝
+    reset();
+    const h1=addAtom('H',new THREE.Vector3(0,0,0));
+    const cA=addAtom('C',new THREE.Vector3(4,0,0));
+    const cB=addAtom('C',new THREE.Vector3(-4,0,0));
+    check('H 连第 1 根键通过', addBond(h1,cA)===true, '');
+    check('H 连第 2 根键被拒', addBond(h1,cB)===false, '');
+
+    // 7 删原子连带删键
+    reset();
+    const w=buildMol([['O',[0,0,0]],['H',[2,0,0]],['H',[0,0,2]]],[[0,1],[0,2]]);
+    const bondsBefore=asmBonds.length;
+    removeAtom(w[0]);
+    check('删原子连带删键', bondsBefore===2 && asmBonds.length===0 && asmAtoms.length===2, asmBonds.length+' 根键 / '+asmAtoms.length+' 个原子');
+
+    // 8 分子识别
+    buildMol([['C',[0,0,0]],['O',[3,0,0]],['O',[-3,0,0]]],[[0,1],[0,2]]);
+    const rec=identifyMolecules().find(x=>x.group.length===3);
+    check('识别 CO₂', !!(rec&&rec.match&&rec.match.formula==='CO₂'), rec&&rec.match?rec.match.name:'未识别');
+  } finally {
+    reset(); arrangeDisabled=false; refreshMolecules();
+    setStatus('自检完成：'+pass+' 项通过、'+fail+' 项失败（场景已清空）');
+  }
+  showSelfTest(rows,pass,fail);
+  return {pass,fail};
+}
+document.getElementById('btnSelfTest').addEventListener('click',()=>runSelfTest());
+if(location.search.indexOf('selftest=1')>=0){ switchView('assembly'); setTimeout(runSelfTest,300); }
+
 refreshAssemblyUI();
+
+
 </script>
+
 
 </body>
 </html>
