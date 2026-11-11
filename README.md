@@ -156,4 +156,4 @@ node test/core.test.mjs  # 跑 20 条核心断言
 
 ## 八、验收截图
 
-`shots/` 里：`00-sn2.png`（SN2 视图）、`01-selftest.png`（23/23 PASS）、`02-co2.png`（CO₂ 双键 180° + 解释卡）、`03-h2o-lp.png`（水的两组孤对）、`04-ethanol.png`、`05-dme.png`（乙醇与二甲醚形态对比）。
+`shots/` 里：`00-sn2.png`（SN2 视图）、`01-selftest.png`（23/23 PASS）、`02-co2.png`（CO₂ 双键 180° + 解释卡）、`03-h2o-lp.png`（水的两组孤对）、`04-ethanol.png`、`05-dme.png`（乙醇与二甲醚形态对比）、`06-mobile.png`（241 px 窄屏）、`07-repo-index.png`（仓库 index.html 自检）、`08-pages-live.png`（线上 Pages 自检）。
